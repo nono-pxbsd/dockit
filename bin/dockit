@@ -1,0 +1,37 @@
+#!/bin/bash
+
+SCRIPT_DIR="$( cd "$( dirname "$(readlink -f "${BASH_SOURCE[0]}" )" )" && pwd )"
+
+# Couleurs
+CYAN="\e[36m"
+BOLD="\e[1m"
+RESET="\e[0m"
+
+clear
+echo -e "${BOLD}${CYAN}🚀 Dockit — Générateur d’environnements de développement${RESET}"
+echo ""
+
+echo "🛠️  Que souhaitez-vous lancer ?"
+CHOICE=$(echo -e "PrestaShop\nWordPress (bientôt)\nSymfony (bientôt)" | fzf --prompt "Votre choix : " --height 7 --border --ansi)
+
+case "$CHOICE" in
+  "PrestaShop")
+    # echo "📂 Exécution de PrestaShop depuis : $SCRIPT_DIR/prestashop-env"
+    if [ -f "$SCRIPT_DIR/prestashop-env" ]; then
+      bash "$SCRIPT_DIR/prestashop-env"
+    else
+      echo "❌ Erreur : Le script $SCRIPT_DIR/prestashop-env est introuvable."
+      exit 1
+    fi
+    ;;
+  "WordPress (bientôt)")
+    echo "🚧 WordPress : bientôt disponible."
+    ;;
+  "Symfony (bientôt)")
+    echo "🚧 Symfony : bientôt disponible."
+    ;;
+  *)
+    echo "❌ Choix invalide."
+    exit 1
+    ;;
+esac
