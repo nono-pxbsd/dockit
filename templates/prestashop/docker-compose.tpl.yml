@@ -1,0 +1,86 @@
+services:
+  php:
+    build:
+      context: .docker/php
+      dockerfile: Dockerfile
+      args:
+        PHP_VERSION: ${PHP_VERSION}
+        PHP_EXTENSIONS: ${PHP_EXTENSIONS}
+    container_name: ${PROJECT_NAME}_php
+    volumes:
+      - ${PS_SOURCES_DIR}:/var/www/html
+      - ./config/php.ini:/usr/local/etc/php/php.ini:ro
+    networks:
+      - ps_network
+
+  web:
+    image: httpd:2.4
+    container_name: ${PROJECT_NAME}_web
+    ports:
+      - "${WEB_HTTP_PORT}:80"
+      - "${WEB_HTTPS_PORT}:443"
+    volumes:
+      - ${PS_SOURCES_DIR}:/usr/local/apache2/htdocs/
+      - ./config/sites-available:/usr/local/apache2/conf/sites-available
+      - ./config/sites-enabled:/usr/local/apache2/conf/sites-enabled
+    depends_on:
+      - php
+    networks:
+      - ps_network
+
+  db:
+    image: mariadb:${MARIADB_VERSION}
+    container_name: ${PROJECT_NAME}_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: prestashop
+      MYSQL_USER: prestashop
+      MYSQL_PASSWORD: prestashop
+    ports:
+      - "${DB_PORT}:3306"
+    volumes:
+      - ${PS_DB_DIR}:/var/lib/mysql
+    networks:
+      - ps_network
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    platform: ${DOCKER_PLATFORM}
+    container_name: ${PROJECT_NAME}_phpmyadmin
+    restart: always
+    ports:
+      - "${PHPMYADMIN_PORT}:80"
+    environment:
+      PMA_HOST: ${PROJECT_NAME}_db
+    depends_on:
+      - db
+    networks:
+      - ps_network
+
+  mailpit:
+    image: axllent/mailpit
+    container_name: ${PROJECT_NAME}_mailpit
+    restart: always
+    ports:
+      - "${MAILPIT_PORT}:8025"
+    volumes:
+      - ${PS_LOGS_DIR}/mailpit.log:/var/log/mailpit.log
+    networks:
+      - ps_network
+
+  node:
+    image: node:${NODE_VERSION}
+    container_name: ${PROJECT_NAME}_node
+    volumes:
+      - ${PS_SOURCES_DIR}/themes:/var/www/html/themes
+      - ${PS_LOGS_DIR}/node.log:/var/log/node.log
+    working_dir: /var/www/html/themes/${THEME_NAME}
+    command: tail -f /dev/null
+    networks:
+      - ps_network
+
+networks:
+  ps_network:
+    name: ${PROJECT_NAME}_network
+    driver: bridge

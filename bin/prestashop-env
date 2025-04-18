@@ -1,0 +1,163 @@
+#!/bin/bash
+
+# Chargement des modules
+SCRIPT_DIR="$( cd "$( dirname "$(readlink -f "${BASH_SOURCE[0]}" )" )" && pwd )"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+source "$ROOT_DIR/lib/project.sh"
+source "$ROOT_DIR/lib/ports.sh"
+source "$ROOT_DIR/lib/docker.sh"
+source "$ROOT_DIR/lib/prompt.sh"
+source "$ROOT_DIR/lib/env.sh"
+source "$ROOT_DIR/lib/versions.sh"
+source "$ROOT_DIR/lib/prestashop.sh"
+source "$ROOT_DIR/lib/utils.sh"
+
+# Couleurs
+GREEN="\e[32m"
+CYAN="\e[36m"
+BOLD="\e[1m"
+RESET="\e[0m"
+
+echo -e "${BOLD}${CYAN}🚀 Welcome to the PrestaShop environment setup!${RESET}"
+
+######################################
+# Étape 1 : Nom du projet
+######################################
+read -p "📝 Enter project name (letters, dashes, underscores, dots): " raw_project_name
+PROJECT_NAME=$(sanitize_project_name "$raw_project_name") || exit 1
+echo -e "✅ Project name: ${GREEN}${PROJECT_NAME}${RESET}"
+
+######################################
+# Étape 1.5 : Choix du dossier racine
+######################################
+read -p "📁 Où souhaitez-vous créer le projet ? [/var/www] : " BASE_DIR_INPUT
+BASE_DIR=$(normalize_path "${BASE_DIR_INPUT:-/var/www}")
+PROJECT_DIR=$(normalize_path "$BASE_DIR/$PROJECT_NAME")
+echo -e "📂 Répertoire du projet : ${GREEN}$PROJECT_DIR${RESET}"
+
+if [ ! -d "$PROJECT_DIR" ]; then
+  echo "📂 Création du répertoire du projet : $PROJECT_DIR"
+  mkdir -p "$PROJECT_DIR" || { echo "❌ Impossible de créer le répertoire $PROJECT_DIR"; exit 1; }
+fi
+
+######################################
+# Étape 2 : Choix de la version PS
+######################################
+PS_VERSION=$(select_prestashop_version)
+echo -e "✅ Selected PrestaShop version: ${GREEN}${PS_VERSION}${RESET}"
+
+######################################
+# Étape 3 : Stack recommandée
+######################################
+read -r PHP_VERSION MARIADB_VERSION NODE_VERSION <<< "$(get_stack_for_ps_version "$PS_VERSION")"
+echo -e "🧩 Stack recommandée → PHP: ${GREEN}${PHP_VERSION}${RESET}, MariaDB: ${GREEN}${MARIADB_VERSION}${RESET}, Node: ${GREEN}${NODE_VERSION}${RESET}"
+
+######################################
+# Étape 4 : Sélection des extensions PHP
+######################################
+source "$ROOT_DIR/lib/select-php-extensions.sh"
+PHP_EXTENSIONS=$(select_php_extensions)
+echo -e "✅ Extensions PHP sélectionnées : ${GREEN}${PHP_EXTENSIONS}${RESET}"
+
+######################################
+# Étape 5 : Détection automatique des ports
+######################################
+read -p "📍 Port de base (ex: 10000) [10000] : " BASE_PORT_INPUT
+BASE_PORT=${BASE_PORT_INPUT:-10000}
+
+WEB_HTTP_PORT=$(find_free_port "$BASE_PORT")
+WEB_HTTPS_PORT=$(find_free_port $((WEB_HTTP_PORT + 1)))
+PHPMYADMIN_PORT=$(find_free_port $((WEB_HTTPS_PORT + 1)))
+MAILPIT_PORT=$(find_free_port $((PHPMYADMIN_PORT + 1)))
+DB_PORT=$(find_free_port $((MAILPIT_PORT + 1)))
+
+echo -e "🧠 Ports assignés :"
+echo "   🌐 HTTP         : $WEB_HTTP_PORT"
+echo "   🔐 HTTPS        : $WEB_HTTPS_PORT"
+echo "   🛢️ PhpMyAdmin   : $PHPMYADMIN_PORT"
+echo "   📬 Mailpit      : $MAILPIT_PORT"
+echo "   🐬 MySQL        : $DB_PORT"
+
+######################################
+# Étape 6 : Détection de la plateforme Docker
+######################################
+DOCKER_PLATFORM=$(detect_docker_platform)
+echo -e "📦 Docker Platform : ${GREEN}${DOCKER_PLATFORM}${RESET}"
+
+######################################
+# Étape 7 : Nom des répertoires dynamiques
+######################################
+read -p "📂 Nom du répertoire pour les sources (par défaut : ps_sources) : " PS_SOURCES_DIR
+PS_SOURCES_DIR=$(normalize_path "$PROJECT_DIR/${PS_SOURCES_DIR:-ps_sources}")
+
+read -p "📂 Nom du répertoire pour les logs (par défaut : ps_logs) : " PS_LOGS_DIR
+PS_LOGS_DIR=$(normalize_path "$PROJECT_DIR/${PS_LOGS_DIR:-ps_logs}")
+
+read -p "📂 Nom du répertoire pour la base de données (par défaut : ps_db) : " PS_DB_DIR
+PS_DB_DIR=$(normalize_path "$PROJECT_DIR/${PS_DB_DIR:-ps_db}")
+
+echo -e "✅ Répertoires définis :"
+echo "   Sources : ${GREEN}${PS_SOURCES_DIR} ${RESET}"
+echo "   Logs    : ${GREEN}${PS_LOGS_DIR} ${RESET}"
+echo "   DB      : ${GREEN}${PS_DB_DIR} ${RESET}"
+
+######################################
+# Étape 7 : Génération du fichier .env
+######################################
+ENV_TEMPLATE="$ROOT_DIR/.env.default"
+ENV_TARGET="$PROJECT_DIR/.env"
+generate_env_file "$ENV_TEMPLATE" "$ENV_TARGET" \
+  "PROJECT_NAME=$PROJECT_NAME" \
+  "PROJECT_DIR=$PROJECT_DIR" \
+  "PS_VERSION=$PS_VERSION" \
+  "PHP_VERSION=$PHP_VERSION" \
+  "NODE_VERSION=$NODE_VERSION" \
+  "MARIADB_VERSION=$MARIADB_VERSION" \
+  "WEB_HTTP_PORT=$WEB_HTTP_PORT" \
+  "WEB_HTTPS_PORT=$WEB_HTTPS_PORT" \
+  "PHPMYADMIN_PORT=$PHPMYADMIN_PORT" \
+  "MAILPIT_PORT=$MAILPIT_PORT" \
+  "DB_PORT=$DB_PORT" \
+  "DOCKER_PLATFORM=$DOCKER_PLATFORM" \
+  "PHP_EXTENSIONS=$PHP_EXTENSIONS" \
+  "PS_SOURCES_DIR=$PS_SOURCES_DIR" \
+  "PS_LOGS_DIR=$PS_LOGS_DIR" \
+  "PS_DB_DIR=$PS_DB_DIR"
+
+if [ ! -f "$ENV_TARGET" ]; then
+  echo "❌ Le fichier .env n'a pas été généré."
+  exit 1
+fi
+
+echo -e "✅ ${GREEN}Fichier .env généré avec succès :${RESET} $ENV_TARGET"
+
+######################################
+# Étape 8 : Génération du fichier docker-compose.yml
+######################################
+DOCKER_COMPOSE_TEMPLATE="$ROOT_DIR/templates/prestashop/docker-compose.tpl.yml"
+DOCKER_COMPOSE_TARGET="$PROJECT_DIR/docker-compose.yml"
+
+echo -e "📄 Génération du fichier docker-compose.yml..."
+envsubst < "$DOCKER_COMPOSE_TEMPLATE" > "$DOCKER_COMPOSE_TARGET"
+
+if [ -f "$DOCKER_COMPOSE_TARGET" ]; then
+  echo -e "✅ ${GREEN}Fichier docker-compose.yml généré avec succès :${RESET} $DOCKER_COMPOSE_TARGET"
+else
+  echo -e "❌ ${RED}Erreur lors de la génération du fichier docker-compose.yml.${RESET}"
+  exit 1
+fi
+
+######################################
+# Étape 9 : Téléchargement de PrestaShop
+######################################
+read -p "📥 Souhaitez-vous télécharger PrestaShop ${PS_VERSION} dans le projet ? (y/N) " DOWNLOAD_PS
+if [[ "$DOWNLOAD_PS" =~ ^[Yy]$ ]]; then
+  download_and_extract_prestashop "$PS_VERSION" "$PROJECT_DIR/prestashop"
+else
+  echo "⏭️  Étape ignorée."
+fi
+
+######################################
+# Étape 10 : Lancement
+######################################
+echo -e "🚀 Lancez maintenant : ${BOLD}cd $PROJECT_DIR && docker compose up -d${RESET}"
