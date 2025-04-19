@@ -1,0 +1,8 @@
+# Optionnel – exemple de config Mailpit si besoin
+tls:
+  cert: ""
+  key: ""
+web:
+  port: 8025
+smtp:
+  port: 1025
