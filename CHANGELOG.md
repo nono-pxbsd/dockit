@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-01-06
+
+### Fixed
+- **Critical fix**: Module update script was failing silently due to incorrect `Module::isEnabled()` call without required parameter. All module updates now work correctly.
+
 ## [0.1.0] - 2026-01-06
 
 ### Added
