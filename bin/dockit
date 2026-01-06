@@ -3,12 +3,27 @@
 SCRIPT_DIR="$( cd "$( dirname "$(readlink -f "${BASH_SOURCE[0]}" )" )" && pwd )"
 
 # Couleurs
+GREEN="\e[32m"
 CYAN="\e[36m"
 BOLD="\e[1m"
 RESET="\e[0m"
 
+# Aide
+if [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
+  echo -e "${BOLD}${CYAN}Dockit — Générateur d'environnements de développement${RESET}"
+  echo ""
+  echo "Usage: $0 [OPTIONS]"
+  echo ""
+  echo "Options:"
+  echo "  --auto, -y    Mode automatique (répond 'oui' aux étapes non critiques)"
+  echo "  --help, -h    Affiche cette aide"
+  echo ""
+  echo "Le mode automatique sera transmis à l'environnement sélectionné."
+  exit 0
+fi
+
 clear
-echo -e "${BOLD}${CYAN}🚀 Dockit — Générateur d’environnements de développement${RESET}"
+echo -e "${BOLD}${CYAN}🚀 Dockit — Générateur d'environnements de développement${RESET}"
 echo ""
 
 echo "🛠️  Que souhaitez-vous lancer ?"
@@ -18,7 +33,8 @@ case "$CHOICE" in
   "PrestaShop")
     # echo "📂 Exécution de PrestaShop depuis : $SCRIPT_DIR/prestashop-env"
     if [ -f "$SCRIPT_DIR/prestashop-env" ]; then
-      bash "$SCRIPT_DIR/prestashop-env"
+      # Passer tous les arguments au script prestashop-env
+      bash "$SCRIPT_DIR/prestashop-env" "$@"
     else
       echo "❌ Erreur : Le script $SCRIPT_DIR/prestashop-env est introuvable."
       exit 1
