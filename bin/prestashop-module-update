@@ -1,0 +1,126 @@
+#!/bin/bash
+
+# Script de mise à jour des modules PrestaShop via l'API Addons
+# Usage: ./prestashop-module-update PROJECT_NAME [--auto]
+
+PROJECT_NAME="${1:-dockit-auto}"
+AUTO_MODE=false
+
+# Vérifier le flag --auto
+if [[ "$2" == "--auto" ]] || [[ "$1" == "--auto" ]]; then
+  AUTO_MODE=true
+  PROJECT_NAME="${1:-dockit-auto}"
+  [[ "$1" == "--auto" ]] && PROJECT_NAME="dockit-auto"
+fi
+
+# Couleurs
+GREEN="\e[32m"
+RED="\e[31m"
+CYAN="\e[36m"
+YELLOW="\e[33m"
+BOLD="\e[1m"
+RESET="\e[0m"
+
+echo -e "${BOLD}${CYAN}🔄 Mise à jour des modules PrestaShop${RESET}"
+echo -e "Projet: ${GREEN}${PROJECT_NAME}${RESET}"
+echo ""
+
+# Vérifier que le container existe
+if ! docker ps --filter "name=${PROJECT_NAME}_php" --format "{{.Names}}" | grep -q "${PROJECT_NAME}_php"; then
+  echo -e "${RED}❌ Container ${PROJECT_NAME}_php introuvable${RESET}"
+  exit 1
+fi
+
+echo -e "🔍 ${BOLD}Recherche des mises à jour disponibles via API Addons...${RESET}"
+
+# Chemin du script (relatif à ce fichier)
+SCRIPT_DIR="$( cd "$( dirname "$(readlink -f "${BASH_SOURCE[0]}" )" )" && pwd )"
+PHP_CHECK_SCRIPT="$SCRIPT_DIR/../lib/prestashop-check-updates.php"
+
+# Copier le script PHP dans le container
+docker cp "$PHP_CHECK_SCRIPT" "${PROJECT_NAME}_php:/tmp/check-updates.php" >/dev/null 2>&1
+
+# Exécuter le script et nettoyer
+RESULT=$(docker exec "${PROJECT_NAME}_php" bash -c "php /tmp/check-updates.php 2>&1 && rm -f /tmp/check-updates.php")
+
+# Vérifier les erreurs
+if echo "$RESULT" | grep -q "^ERROR:"; then
+  echo -e "${RED}❌ Erreur lors de la récupération des mises à jour${RESET}"
+  ERROR_MSG=$(echo "$RESULT" | grep "^ERROR:" | sed 's/^ERROR://')
+  echo -e "${YELLOW}Détails: $ERROR_MSG${RESET}"
+  exit 1
+fi
+
+# Filtrer les lignes valides (contenant |)
+MODULES_TO_UPDATE=$(echo "$RESULT" | grep "|")
+
+if [ -z "$MODULES_TO_UPDATE" ]; then
+  echo -e "${GREEN}✅ Aucune mise à jour disponible !${RESET}"
+  exit 0
+fi
+
+MODULE_COUNT=$(echo "$MODULES_TO_UPDATE" | wc -l)
+echo -e "${YELLOW}⚠️  ${MODULE_COUNT} module(s) peuvent être mis à jour${RESET}"
+echo ""
+
+# Afficher les modules
+echo -e "${BOLD}Modules disponibles pour mise à jour :${RESET}"
+echo "$MODULES_TO_UPDATE" | while IFS='|' read -r name display_name version_current version_available; do
+  echo -e "  • ${CYAN}$name${RESET} ($display_name) : v$version_current → v$version_available"
+done
+echo ""
+
+# Demander confirmation (sauf en mode auto)
+if [ "$AUTO_MODE" = false ]; then
+  read -p "Voulez-vous mettre à jour ces modules ? (y/N) " CONFIRM
+  if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+    echo -e "${YELLOW}⏭️  Mise à jour annulée${RESET}"
+    exit 0
+  fi
+fi
+
+echo ""
+echo -e "${BOLD}${CYAN}🔨 Mise à jour des modules...${RESET}"
+echo ""
+
+# Mettre à jour chaque module
+SUCCESS_COUNT=0
+FAIL_COUNT=0
+
+echo "$MODULES_TO_UPDATE" | while IFS='|' read -r name display_name version_current version_available; do
+  # Ignorer les lignes vides ou invalides
+  if [ -z "$name" ] || [ -z "$display_name" ]; then
+    continue
+  fi
+
+  echo -e "  Mise à jour de ${CYAN}${name}${RESET} (${display_name}) : v$version_current → v$version_available"
+
+  # Copier le script d'upgrade dans le container
+  PHP_UPGRADE_SCRIPT="$SCRIPT_DIR/../lib/prestashop-upgrade-module.php"
+  docker cp "$PHP_UPGRADE_SCRIPT" "${PROJECT_NAME}_php:/tmp/upgrade-module.php" >/dev/null 2>&1
+
+  # Exécuter l'upgrade et nettoyer
+  RESULT=$(docker exec "${PROJECT_NAME}_php" bash -c "php /tmp/upgrade-module.php '$name' 2>&1 && rm -f /tmp/upgrade-module.php")
+
+  if [ "$RESULT" = "SUCCESS" ]; then
+    echo -e "    ${GREEN}✅ Mis à jour avec succès${RESET}"
+    ((SUCCESS_COUNT++))
+  else
+    echo -e "    ${RED}❌ Échec de la mise à jour${RESET}"
+    if echo "$RESULT" | grep -q "ERROR:"; then
+      ERROR_MSG=$(echo "$RESULT" | sed 's/^ERROR://')
+      echo -e "    ${YELLOW}Détails: $ERROR_MSG${RESET}"
+    fi
+    ((FAIL_COUNT++))
+  fi
+  echo ""
+done
+
+echo ""
+echo -e "${BOLD}${CYAN}📊 Résumé :${RESET}"
+echo -e "  ${GREEN}✅ Succès : ${SUCCESS_COUNT}${RESET}"
+if [ $FAIL_COUNT -gt 0 ]; then
+  echo -e "  ${RED}❌ Échecs : ${FAIL_COUNT}${RESET}"
+fi
+echo ""
+echo -e "${GREEN}✅ Terminé !${RESET}"
