@@ -245,6 +245,12 @@ fi
 
 if [[ "$DOWNLOAD_PS" =~ ^[Yy]$ ]]; then
   download_and_extract_prestashop "$PS_VERSION" "$PS_SOURCES_DIR"
+
+  # Télécharger Hummingbird si c'est le thème par défaut pour cette version
+  if [[ "$THEME_NAME" == "hummingbird" ]]; then
+    HUMMINGBIRD_VERSION=$(get_hummingbird_version_for_ps "$PS_VERSION")
+    download_and_extract_hummingbird "$HUMMINGBIRD_VERSION" "$PS_SOURCES_DIR"
+  fi
 else
   echo "⏭️  Étape ignorée."
 fi

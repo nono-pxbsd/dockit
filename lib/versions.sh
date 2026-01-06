@@ -25,6 +25,19 @@ get_theme_for_ps_version() {
   esac
 }
 
+# Mapping entre versions PrestaShop et versions Hummingbird
+get_hummingbird_version_for_ps() {
+  local ps_version="$1"
+
+  case "$ps_version" in
+    8.0.*) echo "v1.0.1" ;;  # Latest stable for PS 8.0.x
+    8.1.*) echo "v1.0.1" ;;  # Latest stable for PS 8.1.x
+    8.2.*) echo "v1.0.1" ;;  # Latest stable for PS 8.2.x
+    9.*) echo "v2.0.0-beta.2" ;;  # Latest for PS 9.x
+    *) echo "v1.0.1" ;; # fallback to stable v1.x
+  esac
+}
+
 # Liste complète depuis 1.7.8.2 à aujourd’hui
 PS_VERSIONS=(
   9.0.0-alpha.1
