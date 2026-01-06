@@ -84,7 +84,7 @@ try {
 
     if (empty($realErrors)) {
         // Vérifier que le module est toujours actif ou le réactiver
-        if (!$moduleInstance->isEnabled()) {
+        if (!Module::isEnabled($moduleName)) {
             $moduleInstance->enable();
         }
         echo "SUCCESS";
