@@ -12,7 +12,7 @@ generate_env_file() {
   for pair in "$@"; do
     key="${pair%%=*}"
     value="${pair#*=}"
-    value=$(echo "$value" | sed 's/[&/\]/\\&/g') # Échappe les caractères spéciaux
-    sed -i "s|^${key}=.*|${key}=${value}|" "$target_file"
+    escaped_value=$(printf '%s\n' "$value" | sed -e 's/[\/&]/\\&/g') # Échappe les caractères spéciaux
+    sed -i "s|^${key}=.*|${key}=${escaped_value}|" "$target_file"
   done
 }
