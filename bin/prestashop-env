@@ -373,7 +373,8 @@ if [[ "$DOWNLOAD_PS" =~ ^[Yy]$ ]] && [[ "$START_DOCKER" =~ ^[Yy]$ ]] && [[ "$RUN
       --email="$ADMIN_EMAIL" \
       --password="$ADMIN_PASSWORD" \
       --language="$SHOP_LANGUAGE" \
-      --timezone="$SHOP_TIMEZONE"
+      --timezone="$SHOP_TIMEZONE" \
+      --theme="$THEME_NAME"
 
     if [ $? -eq 0 ]; then
       echo ""
@@ -388,7 +389,24 @@ if [[ "$DOWNLOAD_PS" =~ ^[Yy]$ ]] && [[ "$START_DOCKER" =~ ^[Yy]$ ]] && [[ "$RUN
       echo -e "   Mot de passe : ${GREEN}${ADMIN_PASSWORD}${RESET}"
       echo ""
 
+      # Vérifier et importer les types d'images du thème si nécessaire
+      echo ""
+      echo -e "🖼️  ${BOLD}Vérification des types d'images du thème...${RESET}"
+      IMPORT_SCRIPT="$SCRIPT_DIR/../lib/import-theme-image-types.php"
+      docker cp "$IMPORT_SCRIPT" "${PROJECT_NAME}_php:/tmp/import-theme-image-types.php" >/dev/null 2>&1
+      IMPORT_RESULT=$(docker exec "${PROJECT_NAME}_php" bash -c "php /tmp/import-theme-image-types.php '$THEME_NAME' 2>&1 && rm -f /tmp/import-theme-image-types.php")
+
+      if echo "$IMPORT_RESULT" | grep -q "SUCCESS"; then
+        IMPORTED_COUNT=$(echo "$IMPORT_RESULT" | grep -oP 'Imported \K\d+')
+        if [ "$IMPORTED_COUNT" -gt 0 ]; then
+          echo -e "✅ ${GREEN}${IMPORTED_COUNT} types d'images importés depuis le thème${RESET}"
+        else
+          echo -e "✅ ${GREEN}Types d'images déjà configurés${RESET}"
+        fi
+      fi
+
       # Supprimer le dossier install-dev pour sécurité
+      echo ""
       echo -e "🔒 Suppression du dossier install-dev pour sécurité..."
       docker exec "${PROJECT_NAME}_php" rm -rf /var/www/html/install-dev
       echo -e "✅ ${GREEN}Dossier install-dev supprimé${RESET}"
