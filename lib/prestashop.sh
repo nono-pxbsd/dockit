@@ -1,45 +1,52 @@
 #!/bin/bash
 
-# Télécharge le fichier ZIP de PrestaShop
-download_prestashop_zip() {
-  local version="$1"
-  local dest_dir="$2"
-  local zip_path="$dest_dir/prestashop.zip"
-  local url="https://github.com/PrestaShop/PrestaShop/releases/download/${version}/prestashop_${version}.zip"
-
-  echo "⏬ Téléchargement depuis $url"
-  if ! curl -L -o "$zip_path" "$url"; then
-    echo "❌ Échec du téléchargement de PrestaShop. Vérifiez votre connexion ou l'URL."
-    exit 1
-  fi
-  echo "✅ Fichier téléchargé : $zip_path"
-}
-
-# Extrait le fichier ZIP de PrestaShop
-extract_prestashop_zip() {
-  local zip_path="$1"
-  local dest_dir="$2"
-
-  echo "📦 Extraction dans $dest_dir..."
-  if ! unzip -q "$zip_path" -d "$dest_dir"; then
-    echo "❌ Échec de l'extraction du fichier ZIP."
-    exit 1
-  fi
-  rm "$zip_path"
-  echo "✅ PrestaShop extrait dans $dest_dir"
-}
-
-# Télécharge et extrait PrestaShop
+# Télécharge et extrait PrestaShop depuis le code source GitHub
 download_and_extract_prestashop() {
   local version="$1"
   local dest_dir="$2"
+  local temp_zip="$dest_dir/prestashop_source.zip"
+  local url="https://github.com/PrestaShop/PrestaShop/archive/refs/tags/${version}.zip"
 
   # Crée le répertoire de destination s'il n'existe pas
   mkdir -p "$dest_dir"
 
-  # Téléchargement
-  download_prestashop_zip "$version" "$dest_dir"
+  # Téléchargement du code source
+  echo "⏬ Téléchargement du code source depuis $url"
+  if ! curl -L -o "$temp_zip" "$url"; then
+    echo "❌ Échec du téléchargement de PrestaShop. Vérifiez votre connexion ou l'URL."
+    exit 1
+  fi
+  echo "✅ Fichier téléchargé : $temp_zip"
 
-  # Extraction
-  extract_prestashop_zip "$dest_dir/prestashop.zip" "$dest_dir"
+  # Extraction dans un répertoire temporaire
+  echo "📦 Extraction des sources PrestaShop..."
+  local temp_extract="$dest_dir/temp_extract"
+  mkdir -p "$temp_extract"
+
+  if ! unzip -q "$temp_zip" -d "$temp_extract"; then
+    echo "❌ Échec de l'extraction du fichier ZIP."
+    rm -rf "$temp_extract"
+    rm "$temp_zip"
+    exit 1
+  fi
+
+  # GitHub crée un dossier PrestaShop-VERSION, on déplace son contenu
+  local extracted_folder=$(find "$temp_extract" -maxdepth 1 -type d -name "PrestaShop-*" | head -n 1)
+
+  if [ -z "$extracted_folder" ]; then
+    echo "❌ Structure inattendue de l'archive PrestaShop."
+    rm -rf "$temp_extract"
+    rm "$temp_zip"
+    exit 1
+  fi
+
+  # Déplace le contenu vers le répertoire de destination
+  mv "$extracted_folder"/* "$dest_dir/" 2>/dev/null
+  mv "$extracted_folder"/.[!.]* "$dest_dir/" 2>/dev/null || true
+
+  # Nettoyage
+  rm -rf "$temp_extract"
+  rm "$temp_zip"
+
+  echo "✅ Sources PrestaShop extraites dans $dest_dir"
 }
