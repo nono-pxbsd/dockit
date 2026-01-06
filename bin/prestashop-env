@@ -325,7 +325,20 @@ if [[ "$DOWNLOAD_PS" =~ ^[Yy]$ ]] && [[ "$START_DOCKER" =~ ^[Yy]$ ]]; then
     if [[ "$RUN_INSTALL" =~ ^[Yy]$ ]]; then
       echo ""
       echo -e "🎨 ${BOLD}Compilation des assets (BO + Front)...${RESET}"
-      docker exec -u node "${PROJECT_NAME}_node" bash /var/www/html/tools/assets/build.sh
+
+      # Compiler le BO (admin)
+      echo -e "  📦 Compilation du Back Office..."
+      docker exec -u node "${PROJECT_NAME}_node" bash /var/www/html/tools/assets/build.sh admin-default
+      docker exec -u node "${PROJECT_NAME}_node" bash /var/www/html/tools/assets/build.sh admin-new-theme
+
+      # Compiler le thème front selon la version
+      if [[ "$THEME_NAME" == "hummingbird" ]]; then
+        echo -e "  🐦 Compilation du thème Hummingbird..."
+        docker exec -u node "${PROJECT_NAME}_node" bash -c "cd /var/www/html/themes/hummingbird && npm install && npm run build"
+      elif [[ "$THEME_NAME" == "classic" ]]; then
+        echo -e "  📘 Compilation du thème Classic..."
+        docker exec -u node "${PROJECT_NAME}_node" bash /var/www/html/tools/assets/build.sh front-classic
+      fi
 
       if [ $? -eq 0 ]; then
         echo -e "✅ ${GREEN}Assets compilés avec succès${RESET}"
