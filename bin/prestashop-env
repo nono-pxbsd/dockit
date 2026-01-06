@@ -3,6 +3,7 @@
 # Chargement des modules
 SCRIPT_DIR="$( cd "$( dirname "$(readlink -f "${BASH_SOURCE[0]}" )" )" && pwd )"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+source "$ROOT_DIR/lib/dependencies.sh"
 source "$ROOT_DIR/lib/project.sh"
 source "$ROOT_DIR/lib/ports.sh"
 source "$ROOT_DIR/lib/docker.sh"
@@ -10,15 +11,46 @@ source "$ROOT_DIR/lib/prompt.sh"
 source "$ROOT_DIR/lib/env.sh"
 source "$ROOT_DIR/lib/versions.sh"
 source "$ROOT_DIR/lib/prestashop.sh"
+source "$ROOT_DIR/lib/extensions.sh"
 source "$ROOT_DIR/lib/utils.sh"
 
 # Couleurs
 GREEN="\e[32m"
+RED="\e[31m"
 CYAN="\e[36m"
+YELLOW="\e[33m"
 BOLD="\e[1m"
 RESET="\e[0m"
 
+# Mode automatique (--auto ou -y)
+AUTO_MODE=false
+if [[ "$1" == "--auto" ]] || [[ "$1" == "-y" ]]; then
+  AUTO_MODE=true
+  echo -e "${BOLD}${CYAN}🚀 Mode automatique activé${RESET}"
+elif [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
+  echo -e "${BOLD}${CYAN}PrestaShop Environment Setup${RESET}"
+  echo ""
+  echo "Usage: $0 [OPTIONS]"
+  echo ""
+  echo "Options:"
+  echo "  --auto, -y    Mode automatique (répond 'oui' aux étapes non critiques)"
+  echo "  --help, -h    Affiche cette aide"
+  echo ""
+  echo "Mode automatique active automatiquement :"
+  echo "  • Téléchargement de PrestaShop"
+  echo "  • Lancement de Docker Compose"
+  echo "  • Installation des dépendances et compilation des assets"
+  echo "  • Installation CLI de PrestaShop"
+  echo "  • Mise à jour des modules"
+  echo ""
+  echo "Les questions de configuration (nom, version, credentials) restent interactives."
+  exit 0
+fi
+
 echo -e "${BOLD}${CYAN}🚀 Welcome to the PrestaShop environment setup!${RESET}"
+
+# Vérification des dépendances nécessaires
+check_dependencies
 
 ######################################
 # Étape 1 : Nom du projet
@@ -50,14 +82,14 @@ echo -e "✅ Selected PrestaShop version: ${GREEN}${PS_VERSION}${RESET}"
 # Étape 3 : Stack recommandée
 ######################################
 read -r PHP_VERSION MARIADB_VERSION NODE_VERSION <<< "$(get_stack_for_ps_version "$PS_VERSION")"
-echo -e "🧩 Stack recommandée → PHP: ${GREEN}${PHP_VERSION}${RESET}, MariaDB: ${GREEN}${MARIADB_VERSION}${RESET}, Node: ${GREEN}${NODE_VERSION}${RESET}"
+THEME_NAME=$(get_theme_for_ps_version "$PS_VERSION")
+echo -e "🧩 Stack recommandée → PHP: ${GREEN}${PHP_VERSION}${RESET}, MariaDB: ${GREEN}${MARIADB_VERSION}${RESET}, Node: ${GREEN}${NODE_VERSION}${RESET}, Thème: ${GREEN}${THEME_NAME}${RESET}"
 
 ######################################
 # Étape 4 : Sélection des extensions PHP
 ######################################
-source "$ROOT_DIR/lib/select-php-extensions.sh"
-PHP_EXTENSIONS=$(select_php_extensions)
-echo -e "✅ Extensions PHP sélectionnées : ${GREEN}${PHP_EXTENSIONS}${RESET}"
+selected_extensions=$(select_php_extensions "$PHP_VERSION") || exit 1
+PHP_EXTENSIONS=$(format_extensions_for_env "$selected_extensions")
 
 ######################################
 # Étape 5 : Détection automatique des ports
@@ -97,21 +129,59 @@ read -p "📂 Nom du répertoire pour la base de données (par défaut : ps_db) 
 PS_DB_DIR=$(normalize_path "$PROJECT_DIR/${PS_DB_DIR:-ps_db}")
 
 echo -e "✅ Répertoires définis :"
-echo "   Sources : ${GREEN}${PS_SOURCES_DIR} ${RESET}"
-echo "   Logs    : ${GREEN}${PS_LOGS_DIR} ${RESET}"
-echo "   DB      : ${GREEN}${PS_DB_DIR} ${RESET}"
+echo -e "   Sources : ${GREEN}${PS_SOURCES_DIR}${RESET}"
+echo -e "   Logs    : ${GREEN}${PS_LOGS_DIR}${RESET}"
+echo -e "   DB      : ${GREEN}${PS_DB_DIR}${RESET}"
+
+######################################
+# Étape 6.5 : Configuration de la base de données et PrestaShop
+######################################
+echo ""
+echo -e "${BOLD}${CYAN}Configuration de la base de données${RESET}"
+
+read -p "📊 Nom de la base de données [prestashop] : " DB_NAME_INPUT
+DB_NAME=${DB_NAME_INPUT:-prestashop}
+
+read -p "👤 Utilisateur de la base de données [prestashop] : " DB_USER_INPUT
+DB_USER=${DB_USER_INPUT:-prestashop}
+
+read -p "🔐 Mot de passe de la base de données [prestashop] : " DB_PASSWORD_INPUT
+DB_PASSWORD=${DB_PASSWORD_INPUT:-prestashop}
+
+echo ""
+echo -e "${BOLD}${CYAN}Configuration de l'administrateur PrestaShop${RESET}"
+
+read -p "📧 Email de l'administrateur [admin@example.com] : " ADMIN_EMAIL_INPUT
+ADMIN_EMAIL=${ADMIN_EMAIL_INPUT:-admin@example.com}
+
+read -p "🔐 Mot de passe de l'administrateur [admin123] : " ADMIN_PASSWORD_INPUT
+ADMIN_PASSWORD=${ADMIN_PASSWORD_INPUT:-admin123}
+
+read -p "🌍 Langue du shop [fr] : " SHOP_LANGUAGE_INPUT
+SHOP_LANGUAGE=${SHOP_LANGUAGE_INPUT:-fr}
+
+read -p "🕐 Timezone [Europe/Paris] : " SHOP_TIMEZONE_INPUT
+SHOP_TIMEZONE=${SHOP_TIMEZONE_INPUT:-Europe/Paris}
+
+echo -e "✅ Configuration enregistrée"
 
 ######################################
 # Étape 7 : Génération du fichier .env
 ######################################
 ENV_TEMPLATE="$ROOT_DIR/.env.default"
 ENV_TARGET="$PROJECT_DIR/.env"
+
+# Détection automatique de l'UID et GID de l'utilisateur courant
+USER_UID=$(id -u)
+USER_GID=$(id -g)
+
 generate_env_file "$ENV_TEMPLATE" "$ENV_TARGET" \
   "PROJECT_NAME=$PROJECT_NAME" \
   "PROJECT_DIR=$PROJECT_DIR" \
   "PS_VERSION=$PS_VERSION" \
   "PHP_VERSION=$PHP_VERSION" \
   "NODE_VERSION=$NODE_VERSION" \
+  "THEME_NAME=$THEME_NAME" \
   "MARIADB_VERSION=$MARIADB_VERSION" \
   "WEB_HTTP_PORT=$WEB_HTTP_PORT" \
   "WEB_HTTPS_PORT=$WEB_HTTPS_PORT" \
@@ -122,7 +192,16 @@ generate_env_file "$ENV_TEMPLATE" "$ENV_TARGET" \
   "PHP_EXTENSIONS=$PHP_EXTENSIONS" \
   "PS_SOURCES_DIR=$PS_SOURCES_DIR" \
   "PS_LOGS_DIR=$PS_LOGS_DIR" \
-  "PS_DB_DIR=$PS_DB_DIR"
+  "PS_DB_DIR=$PS_DB_DIR" \
+  "UID=$USER_UID" \
+  "GID=$USER_GID" \
+  "DB_NAME=$DB_NAME" \
+  "DB_USER=$DB_USER" \
+  "DB_PASSWORD=$DB_PASSWORD" \
+  "ADMIN_EMAIL=$ADMIN_EMAIL" \
+  "ADMIN_PASSWORD=$ADMIN_PASSWORD" \
+  "SHOP_LANGUAGE=$SHOP_LANGUAGE" \
+  "SHOP_TIMEZONE=$SHOP_TIMEZONE"
 
 if [ ! -f "$ENV_TARGET" ]; then
   echo "❌ Le fichier .env n'a pas été généré."
@@ -132,13 +211,13 @@ fi
 echo -e "✅ ${GREEN}Fichier .env généré avec succès :${RESET} $ENV_TARGET"
 
 ######################################
-# Étape 8 : Génération du fichier docker-compose.yml
+# Étape 8 : Génération des éléments propres à Docker
 ######################################
-DOCKER_COMPOSE_TEMPLATE="$ROOT_DIR/templates/prestashop/docker-compose.tpl.yml"
+DOCKER_COMPOSE_TEMPLATE="$ROOT_DIR/templates/prestashop/docker-compose.yml"
 DOCKER_COMPOSE_TARGET="$PROJECT_DIR/docker-compose.yml"
 
 echo -e "📄 Génération du fichier docker-compose.yml..."
-envsubst < "$DOCKER_COMPOSE_TEMPLATE" > "$DOCKER_COMPOSE_TARGET"
+cp "$DOCKER_COMPOSE_TEMPLATE" "$DOCKER_COMPOSE_TARGET"
 
 if [ -f "$DOCKER_COMPOSE_TARGET" ]; then
   echo -e "✅ ${GREEN}Fichier docker-compose.yml généré avec succès :${RESET} $DOCKER_COMPOSE_TARGET"
@@ -147,17 +226,197 @@ else
   exit 1
 fi
 
+if [ ! -d "$PROJECT_DIR/.docker" ]; then
+  cp -r "$ROOT_DIR/.docker" "$PROJECT_DIR/"
+  echo -e "${GREEN}Dossier .docker copié dans le projet.${RESET}"
+else
+  echo -e "${YELLOW}⚠️ Le dossier .docker existe déjà dans le projet. Copie ignorée.${RESET}"
+fi
+
 ######################################
 # Étape 9 : Téléchargement de PrestaShop
 ######################################
-read -p "📥 Souhaitez-vous télécharger PrestaShop ${PS_VERSION} dans le projet ? (y/N) " DOWNLOAD_PS
+if [ "$AUTO_MODE" = true ]; then
+  DOWNLOAD_PS="y"
+  echo -e "📥 ${BOLD}Téléchargement de PrestaShop ${PS_VERSION}...${RESET} (auto)"
+else
+  read -p "📥 Souhaitez-vous télécharger PrestaShop ${PS_VERSION} dans le projet ? (y/N) " DOWNLOAD_PS
+fi
+
 if [[ "$DOWNLOAD_PS" =~ ^[Yy]$ ]]; then
-  download_and_extract_prestashop "$PS_VERSION" "$PROJECT_DIR/prestashop"
+  download_and_extract_prestashop "$PS_VERSION" "$PS_SOURCES_DIR"
 else
   echo "⏭️  Étape ignorée."
 fi
 
-######################################
-# Étape 10 : Lancement
-######################################
-echo -e "🚀 Lancez maintenant : ${BOLD}cd $PROJECT_DIR && docker compose up -d${RESET}"
+########################################
+# Étape 10 : Préparation des répertoires pour Docker
+########################################
+echo -e "📁 Création des répertoires nécessaires..."
+
+# Créer les répertoires principaux s'ils n'existent pas
+mkdir -p "$PS_SOURCES_DIR"
+mkdir -p "$PS_DB_DIR"
+mkdir -p "$PS_LOGS_DIR"
+
+# Créer les sous-répertoires de logs pour les bind mounts
+mkdir -p "$PS_LOGS_DIR/mailpit"
+mkdir -p "$PS_LOGS_DIR/node"
+
+echo -e "✅ ${GREEN}Répertoires prêts pour Docker${RESET}"
+
+########################################
+# Étape 11 : Lancement du projet Docker
+########################################
+
+if [ "$AUTO_MODE" = true ]; then
+  START_DOCKER="y"
+  echo -e "🚀 ${BOLD}Lancement de Docker Compose...${RESET} (auto)"
+else
+  read -r -p "🚀 Souhaitez-vous lancer 'docker compose up -d' maintenant ? (y/N) " START_DOCKER
+fi
+
+if [[ "$START_DOCKER" =~ ^[Yy]$ ]]; then
+  echo -e "🔧 ${BOLD}cd \"$PROJECT_DIR\" && docker compose up -d${RESET}"
+  cd "$PROJECT_DIR" && docker compose up -d
+else
+  echo -e "⏭️  Étape ignorée. Vous pouvez lancer manuellement :"
+  echo -e "   ${BOLD}cd \"$PROJECT_DIR\" && docker compose up -d${RESET}"
+fi
+
+########################################
+# Étape 12 : Installation des dépendances et compilation des assets
+########################################
+
+if [[ "$DOWNLOAD_PS" =~ ^[Yy]$ ]] && [[ "$START_DOCKER" =~ ^[Yy]$ ]]; then
+  echo ""
+  if [ "$AUTO_MODE" = true ]; then
+    RUN_INSTALL="y"
+    echo -e "🔨 ${BOLD}Installation des dépendances et compilation des assets...${RESET} (auto)"
+  else
+    read -r -p "🔨 Souhaitez-vous installer les dépendances et compiler les assets ? (y/N) " RUN_INSTALL
+  fi
+
+  if [[ "$RUN_INSTALL" =~ ^[Yy]$ ]]; then
+    if [ "$AUTO_MODE" != true ]; then
+      echo -e "🔨 ${BOLD}Installation des dépendances et compilation des assets...${RESET}"
+      echo -e "⏳ Cela peut prendre plusieurs minutes..."
+      echo ""
+    fi
+
+    # Étape 1 : Composer dans le container PHP
+    echo -e "📦 ${BOLD}Installation des dépendances Composer...${RESET}"
+    docker exec "${PROJECT_NAME}_php" composer install --working-dir=/var/www/html --no-interaction --prefer-dist
+
+    if [ $? -eq 0 ]; then
+      echo -e "✅ ${GREEN}Dépendances Composer installées${RESET}"
+    else
+      echo -e "❌ ${RED}Erreur lors de l'installation Composer${RESET}"
+      RUN_INSTALL="n"
+    fi
+
+    # Étape 2 : Compilation des assets dans le container Node
+    if [[ "$RUN_INSTALL" =~ ^[Yy]$ ]]; then
+      echo ""
+      echo -e "🎨 ${BOLD}Compilation des assets (BO + Front)...${RESET}"
+      docker exec -u node "${PROJECT_NAME}_node" bash /var/www/html/tools/assets/build.sh
+
+      if [ $? -eq 0 ]; then
+        echo -e "✅ ${GREEN}Assets compilés avec succès${RESET}"
+        echo -e "✅ ${GREEN}${BOLD}Installation terminée avec succès${RESET}"
+      else
+        echo -e "❌ ${RED}Erreur lors de la compilation des assets${RESET}"
+      fi
+    fi
+  else
+    echo -e "⏭️  Étape ignorée. Vous pouvez lancer manuellement :"
+    echo -e "   ${BOLD}docker exec ${PROJECT_NAME}_php composer install --working-dir=/var/www/html${RESET}"
+    echo -e "   ${BOLD}docker exec -u node ${PROJECT_NAME}_node bash /var/www/html/tools/assets/build.sh${RESET}"
+  fi
+fi
+
+########################################
+# Étape 13 : Installation CLI de PrestaShop
+########################################
+
+if [[ "$DOWNLOAD_PS" =~ ^[Yy]$ ]] && [[ "$START_DOCKER" =~ ^[Yy]$ ]] && [[ "$RUN_INSTALL" =~ ^[Yy]$ ]]; then
+  echo ""
+  if [ "$AUTO_MODE" = true ]; then
+    INSTALL_CLI="y"
+    echo -e "🛠️  ${BOLD}Installation de PrestaShop via CLI...${RESET} (auto)"
+  else
+    read -r -p "🛠️  Souhaitez-vous installer PrestaShop via CLI maintenant ? (y/N) " INSTALL_CLI
+  fi
+
+  if [[ "$INSTALL_CLI" =~ ^[Yy]$ ]]; then
+    if [ "$AUTO_MODE" != true ]; then
+      echo -e "🛠️  ${BOLD}Installation de PrestaShop via CLI...${RESET}"
+    fi
+
+    # Construire le domaine avec le port HTTP
+    SHOP_DOMAIN="localhost:${WEB_HTTP_PORT}"
+
+    # Lancer l'installation CLI
+    docker exec "${PROJECT_NAME}_php" php install-dev/index_cli.php \
+      --domain="$SHOP_DOMAIN" \
+      --db_server="${PROJECT_NAME}_db" \
+      --db_name="$DB_NAME" \
+      --db_user="$DB_USER" \
+      --db_password="$DB_PASSWORD" \
+      --prefix=ps_ \
+      --email="$ADMIN_EMAIL" \
+      --password="$ADMIN_PASSWORD" \
+      --language="$SHOP_LANGUAGE" \
+      --timezone="$SHOP_TIMEZONE"
+
+    if [ $? -eq 0 ]; then
+      echo ""
+      echo -e "✅ ${GREEN}${BOLD}PrestaShop installé avec succès !${RESET}"
+      echo ""
+      echo -e "🌐 ${BOLD}Accès au shop :${RESET}"
+      echo -e "   Front Office : ${CYAN}http://localhost:${WEB_HTTP_PORT}${RESET}"
+      echo -e "   Back Office  : ${CYAN}http://localhost:${WEB_HTTP_PORT}/admin-dev${RESET}"
+      echo ""
+      echo -e "👤 ${BOLD}Identifiants administrateur :${RESET}"
+      echo -e "   Email        : ${GREEN}${ADMIN_EMAIL}${RESET}"
+      echo -e "   Mot de passe : ${GREEN}${ADMIN_PASSWORD}${RESET}"
+      echo ""
+
+      # Supprimer le dossier install-dev pour sécurité
+      echo -e "🔒 Suppression du dossier install-dev pour sécurité..."
+      docker exec "${PROJECT_NAME}_php" rm -rf /var/www/html/install-dev
+      echo -e "✅ ${GREEN}Dossier install-dev supprimé${RESET}"
+
+      ########################################
+      # Étape 14 : Mise à jour des modules
+      ########################################
+      echo ""
+      if [ "$AUTO_MODE" = true ]; then
+        UPGRADE_MODULES="y"
+        echo -e "📦 ${BOLD}Mise à jour des modules PrestaShop...${RESET} (auto)"
+      else
+        read -r -p "📦 Souhaitez-vous mettre à jour les modules PrestaShop maintenant ? (y/N) " UPGRADE_MODULES
+      fi
+
+      if [[ "$UPGRADE_MODULES" =~ ^[Yy]$ ]]; then
+        # Utiliser le script dédié à la mise à jour des modules
+        if [ "$AUTO_MODE" = true ]; then
+          bash "$SCRIPT_DIR/prestashop-module-update" "$PROJECT_NAME" --auto
+        else
+          bash "$SCRIPT_DIR/prestashop-module-update" "$PROJECT_NAME"
+        fi
+      else
+        echo -e "⏭️  Étape ignorée. Vous pourrez mettre à jour les modules depuis le Back Office"
+      fi
+
+    else
+      echo -e "❌ ${RED}Erreur lors de l'installation CLI${RESET}"
+      echo -e "   Vous pouvez réessayer manuellement ou utiliser l'interface web :"
+      echo -e "   ${CYAN}http://localhost:${WEB_HTTP_PORT}/install-dev${RESET}"
+    fi
+  else
+    echo -e "⏭️  Étape ignorée. Vous pouvez installer manuellement :"
+    echo -e "   • Via CLI : ${BOLD}docker exec ${PROJECT_NAME}_php php install-dev/index_cli.php [options]${RESET}"
+    echo -e "   • Via Web : ${CYAN}http://localhost:${WEB_HTTP_PORT}/install-dev${RESET}"
+  fi
+fi

@@ -14,6 +14,17 @@ get_stack_for_ps_version() {
   esac
 }
 
+# Mapping entre versions PrestaShop et thème par défaut
+get_theme_for_ps_version() {
+  local ps_version="$1"
+
+  case "$ps_version" in
+    1.7.*) echo "classic" ;;
+    8.*|9.*) echo "hummingbird" ;;
+    *) echo "classic" ;; # fallback
+  esac
+}
+
 # Liste complète depuis 1.7.8.2 à aujourd’hui
 PS_VERSIONS=(
   9.0.0-alpha.1
