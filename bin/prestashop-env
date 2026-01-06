@@ -405,6 +405,17 @@ if [[ "$DOWNLOAD_PS" =~ ^[Yy]$ ]] && [[ "$START_DOCKER" =~ ^[Yy]$ ]] && [[ "$RUN
         fi
       fi
 
+      # Activer le thème (fallback au cas où --theme CLI n'a pas fonctionné)
+      echo ""
+      echo -e "🎨 ${BOLD}Activation du thème...${RESET}"
+      ACTIVATE_SCRIPT="$SCRIPT_DIR/../lib/activate-theme.php"
+      docker cp "$ACTIVATE_SCRIPT" "${PROJECT_NAME}_php:/tmp/activate-theme.php" >/dev/null 2>&1
+      ACTIVATE_RESULT=$(docker exec "${PROJECT_NAME}_php" bash -c "php /tmp/activate-theme.php '$THEME_NAME' 2>&1 && rm -f /tmp/activate-theme.php")
+
+      if echo "$ACTIVATE_RESULT" | grep -q "SUCCESS"; then
+        echo -e "✅ ${GREEN}Thème activé avec succès${RESET}"
+      fi
+
       # Supprimer le dossier install-dev pour sécurité
       echo ""
       echo -e "🔒 Suppression du dossier install-dev pour sécurité..."
