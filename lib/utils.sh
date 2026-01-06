@@ -13,3 +13,17 @@ normalize_path() {
 
   echo "$path"
 }
+
+implode() {
+  local separator="$1"
+  shift
+  local arr=("$@")
+  local result=""
+
+  for element in "${arr[@]}"; do
+    [[ -n "$result" ]] && result+="$separator"
+    result+="$element"
+  done
+
+  echo "$result"
+}
