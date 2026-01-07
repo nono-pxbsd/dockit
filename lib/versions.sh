@@ -20,7 +20,8 @@ get_theme_for_ps_version() {
 
   case "$ps_version" in
     1.7.*) echo "classic" ;;
-    8.*|9.*) echo "hummingbird" ;;
+    8.*) echo "classic" ;; # Hummingbird NOT compatible with PS 8.x
+    9.*) echo "hummingbird" ;;
     *) echo "classic" ;; # fallback
   esac
 }
