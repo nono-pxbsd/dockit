@@ -20,8 +20,22 @@ get_theme_for_ps_version() {
 
   case "$ps_version" in
     1.7.*) echo "classic" ;;
-    8.*|9.*) echo "hummingbird" ;;
+    8.*) echo "classic" ;; # Hummingbird NOT compatible with PS 8.x
+    9.*) echo "hummingbird" ;;
     *) echo "classic" ;; # fallback
+  esac
+}
+
+# Mapping entre versions PrestaShop et versions Hummingbird
+get_hummingbird_version_for_ps() {
+  local ps_version="$1"
+
+  case "$ps_version" in
+    8.0.*) echo "v1.0.1" ;;  # Latest stable for PS 8.0.x
+    8.1.*) echo "v1.0.1" ;;  # Latest stable for PS 8.1.x
+    8.2.*) echo "v1.0.1" ;;  # Latest stable for PS 8.2.x
+    9.*) echo "v2.0.0-beta.2" ;;  # Latest for PS 9.x
+    *) echo "v1.0.1" ;; # fallback to stable v1.x
   esac
 }
 
